@@ -71,9 +71,9 @@ function getClipboardCommands() {
     },
     win32: {
       checkImage:
-        'powershell -NoProfile -Command "(Get-Clipboard -Format Image) -ne $null"',
-      saveImage: `powershell -NoProfile -Command "$img = Get-Clipboard -Format Image; if ($img) { $img.Save('${screenshotPath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png) }"`,
-      getPath: 'powershell -NoProfile -Command "Get-Clipboard"',
+        'powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Clipboard]::ContainsImage()"',
+      saveImage: `powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img) { $img.Save('${screenshotPath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png); Write-Host 'Image saved' } else { Write-Host 'No image found' }"`,
+      getPath: 'powershell -NoProfile -Command "Get-Clipboard -Format Text"',
       deleteFile: `del /f "${screenshotPath}"`,
     },
   }
