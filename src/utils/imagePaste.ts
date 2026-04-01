@@ -190,6 +190,7 @@ export async function getImageFromClipboard(): Promise<ImageWithDimensions | nul
       shell: true,
       reject: false,
     })
+    logForDebugging('clipboard check result', { exitCode: checkResult.exitCode, stdout: checkResult.stdout, stderr: checkResult.stderr })
     if (checkResult.exitCode !== 0) {
       return null
     }
@@ -199,6 +200,7 @@ export async function getImageFromClipboard(): Promise<ImageWithDimensions | nul
       shell: true,
       reject: false,
     })
+    logForDebugging('clipboard save result', { exitCode: saveResult.exitCode, stdout: saveResult.stdout, stderr: saveResult.stderr })
     if (saveResult.exitCode !== 0) {
       return null
     }
