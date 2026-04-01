@@ -252,7 +252,8 @@ function convertTools(
     // PATCH PER CODEX: Se è lo strumento Agent, forziamo i campi obbligatori
     if (t.name === 'Agent' && schema.properties) {
       if (!schema.required) schema.required = [];
-      if (!schema.required.includes('message')) schema.required.push('message');
+      // Only add 'message' to required if it exists in properties (for Fireworks compatibility)
+      if (schema.properties.message && !schema.required.includes('message')) schema.required.push('message');
       if (!schema.required.includes('subagent_type')) schema.required.push('subagent_type');
     }
 
