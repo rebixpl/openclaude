@@ -1,7 +1,10 @@
 import { feature } from 'bun:bundle'
 import { randomBytes } from 'crypto'
 import { execa } from 'execa'
-import { basename, extname, isAbsolute, join } from 'path'
+import { spawn } from 'child_process'
+import { appendFileSync, existsSync } from 'fs'
+import { fileURLToPath } from 'node:url'
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'path'
 import {
   IMAGE_MAX_HEIGHT,
   IMAGE_MAX_WIDTH,
@@ -19,6 +22,46 @@ import {
 } from './imageResizer.js'
 import { logError } from './log.js'
 
+// Find the clipboard-helper.cjs file - it could be in src/ (dev) or project root (bundled)
+function getClipboardHelperPath(): string {
+  // Try to find relative to current file (works in both dev and bundled)
+  const currentFileDir = dirname(fileURLToPath(import.meta.url))
+  const paths = [
+    // When running from src/utils/ (dev mode with bun)
+    join(currentFileDir, '..', '..', '..', 'clipboard-helper.cjs'),
+    // When running from dist/ (bundled)
+    join(currentFileDir, '..', '..', 'clipboard-helper.cjs'),
+    // Fallback to cwd
+    join(process.cwd(), 'clipboard-helper.cjs'),
+  ]
+  for (const p of paths) {
+    if (existsSync(p)) {
+      return p
+    }
+  }
+  // Return cwd path as fallback
+  return paths[2]
+}
+
+// Eagerly load Windows clipboard module to avoid async import issues
+let windowsClipboardModule: { hasImage(): boolean; getImageBinary(): Promise<number[]>; getImageBase64(): Promise<string> } | undefined
+let windowsClipboardLoadError: Error | undefined
+if (process.platform === 'win32') {
+  try {
+    // Use require for synchronous loading at startup
+    const mod = require('@mariozechner/clipboard')
+    const clipboard = mod.default || mod
+    windowsClipboardModule = {
+      hasImage: clipboard.hasImage,
+      getImageBinary: clipboard.getImageBinary,
+      getImageBase64: clipboard.getImageBase64,
+    }
+  } catch (e: any) {
+    windowsClipboardLoadError = e
+    logForDebugging('Failed to load Windows clipboard module at startup:', e)
+  }
+}
+
 // Native NSPasteboard reader. GrowthBook gate tengu_collage_kaleidoscope is
 // a kill switch (default on). Falls through to osascript when off.
 // The gate string is inlined at each callsite INSIDE the feature() condition
@@ -35,7 +78,7 @@ function getClipboardCommands() {
   // Use CLAUDE_CODE_TMPDIR if set, otherwise fall back to platform defaults
   const baseTmpDir =
     process.env.CLAUDE_CODE_TMPDIR ||
-    (platform === 'win32' ? process.env.TEMP || 'C:\\Temp' : '/tmp')
+    (platform === 'win32' ? process.env.TEMP || process.env.TMP || 'C:\\Windows\\Temp' : '/tmp')
   const screenshotFilename = 'claude_cli_latest_screenshot.png'
   const tempPaths: Record<SupportedPlatform, string> = {
     darwin: join(baseTmpDir, screenshotFilename),
@@ -72,7 +115,7 @@ function getClipboardCommands() {
     win32: {
       checkImage:
         'powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; exit ([int][System.Windows.Forms.Clipboard]::ContainsImage())"',
-      saveImage: `powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img) { $img.Save('${screenshotPath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png) }"`,
+      saveImage: `powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; $d = '${baseTmpDir.replace(/\\/g, '\\\\')}'; if (!(Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img) { $img.Save('${screenshotPath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png) }"`,
       getPath: 'powershell -NoProfile -Command "exit 0"',
       deleteFile: `del /f "${screenshotPath}" 2>nul || echo deleted`,
     },
@@ -94,6 +137,19 @@ export type ImageWithDimensions = {
  * Check if clipboard contains an image without retrieving it.
  */
 export async function hasImageInClipboard(): Promise<boolean> {
+  // Windows native clipboard fast path
+  if (process.platform === 'win32') {
+    try {
+      const winClip = await getWindowsClipboardModule()
+      if (winClip) {
+        return winClip.hasImage()
+      }
+    } catch (e) {
+      logForDebugging('Windows native hasImageInClipboard failed:', e)
+    }
+    return false
+  }
+
   if (process.platform !== 'darwin') {
     return false
   }
@@ -183,6 +239,39 @@ export async function getImageFromClipboard(): Promise<ImageWithDimensions | nul
     }
   }
 
+  // Windows native clipboard via child process to avoid blocking
+  if (process.platform === 'win32') {
+    try {
+      // Use shell execution to avoid any path escaping issues
+      const helperPath = 'E:/Coding_Projects/vibecoding/openclaude_test/openclaude_src/clipboard-helper.cjs'
+      const result = await execa('node', [helperPath], {
+        timeout: 5000,
+        reject: false,
+        shell: true,  // Use shell to help with any escaping issues
+        windowsVerbatimArguments: true,  // Don't quote arguments on Windows
+      })
+      logForDebugging('Clipboard helper result:', result.exitCode, result.stdout?.slice(0, 100))
+      if (result.exitCode === 0 && result.stdout) {
+        const parsed = JSON.parse(result.stdout)
+        if (parsed.success && parsed.base64) {
+          const imageBuffer = Buffer.from(parsed.base64, 'base64')
+          const resized = await maybeResizeAndDownsampleImageBuffer(
+            imageBuffer,
+            imageBuffer.length,
+            'png',
+          )
+          return {
+            base64: resized.buffer.toString('base64'),
+            mediaType: 'image/png',
+            dimensions: resized.dimensions,
+          }
+        }
+      }
+    } catch (e) {
+      logForDebugging('Windows clipboard helper failed:', e)
+    }
+  }
+
   const { commands, screenshotPath } = getClipboardCommands()
   try {
     // Check if clipboard has image
@@ -190,7 +279,6 @@ export async function getImageFromClipboard(): Promise<ImageWithDimensions | nul
       shell: true,
       reject: false,
     })
-    logForDebugging('clipboard check result', { exitCode: checkResult.exitCode, stdout: checkResult.stdout, stderr: checkResult.stderr })
     if (checkResult.exitCode !== 0) {
       return null
     }
@@ -200,7 +288,6 @@ export async function getImageFromClipboard(): Promise<ImageWithDimensions | nul
       shell: true,
       reject: false,
     })
-    logForDebugging('clipboard save result', { exitCode: saveResult.exitCode, stdout: saveResult.stdout, stderr: saveResult.stderr })
     if (saveResult.exitCode !== 0) {
       return null
     }
@@ -238,7 +325,8 @@ export async function getImageFromClipboard(): Promise<ImageWithDimensions | nul
       mediaType,
       dimensions: resized.dimensions,
     }
-  } catch {
+  } catch (e) {
+    logForDebugging('Error getting image from clipboard:', e)
     return null
   }
 }

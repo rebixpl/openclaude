@@ -1,7 +1,19 @@
 import { feature } from 'bun:bundle';
 import chalk from 'chalk';
+import { appendFileSync } from 'fs';
 import * as path from 'path';
 import * as React from 'react';
+
+// Debug helper for image paste issues
+const DEBUG_LOG_FILE = 'E:/Coding_Projects/vibecoding/openclaude_test/clipboard_debug.log';
+function debug(...args: unknown[]) {
+  try {
+    const msg = `[UI ${new Date().toISOString()}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}\n`;
+    appendFileSync(DEBUG_LOG_FILE, msg);
+  } catch (e: any) {
+    process.stderr.write(`UI DEBUG ERROR: ${e.message}\n`);
+  }
+}
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNotifications } from 'src/context/notifications.js';
 import { useCommandQueue } from 'src/hooks/useCommandQueue.js';
@@ -1149,9 +1161,11 @@ function PromptInput({
     }));
   }
   function onImagePaste(image: string, mediaType?: string, filename?: string, dimensions?: ImageDimensions, sourcePath?: string) {
+    debug('onImagePaste called, image length:', image?.length, 'mediaType:', mediaType);
     logEvent('tengu_paste_image', {});
     onModeChange('prompt');
     const pasteId = nextPasteIdRef.current++;
+    debug('pasteId:', pasteId);
     const newContent: PastedContent = {
       id: pasteId,
       type: 'image',
@@ -1170,6 +1184,7 @@ function PromptInput({
     void storeImage(newContent);
 
     // Update UI
+    debug('Setting pastedContents for id:', pasteId);
     setPastedContents(prev => ({
       ...prev,
       [pasteId]: newContent
@@ -1178,8 +1193,11 @@ function PromptInput({
     // armed, the previous pill's lazy space fires now (before this pill)
     // rather than being lost.
     const prefix = pendingSpaceAfterPillRef.current ? ' ' : '';
-    insertTextAtCursor(prefix + formatImageRef(pasteId));
+    const imageRef = formatImageRef(pasteId);
+    debug('Inserting text at cursor:', prefix + imageRef);
+    insertTextAtCursor(prefix + imageRef);
     pendingSpaceAfterPillRef.current = true;
+    debug('Done');
   }
 
   // Prune images whose [Image #N] placeholder is no longer in the input text.
@@ -1618,20 +1636,48 @@ function PromptInput({
 
   // Handler for chat:imagePaste - paste image from clipboard
   const handleImagePaste = useCallback(() => {
-    void getImageFromClipboard().then(imageData => {
-      if (imageData) {
-        onImagePaste(imageData.base64, imageData.mediaType);
-      } else {
-        const shortcutDisplay = getShortcutDisplay('chat:imagePaste', 'Chat', 'ctrl+v');
-        const message = env.isSSH() ? "No image found in clipboard. You're SSH'd; try scp?" : `No image found in clipboard. Use ${shortcutDisplay} to paste images.`;
-        addNotification({
-          key: 'no-image-in-clipboard',
-          text: message,
-          priority: 'immediate',
-          timeoutMs: 1000
-        });
-      }
+    addNotification({
+      key: 'image-paste-debug',
+      text: 'Alt+V pressed - getting image...',
+      priority: 'immediate',
+      timeoutMs: 2000
     });
+
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Timeout')), 5000)
+    );
+
+    Promise.race([getImageFromClipboard(), timeoutPromise])
+      .then(imageData => {
+        const data = imageData as any;
+        addNotification({
+          key: 'image-paste-debug2',
+          text: data ? `Got image! ${data.mediaType} ${Math.round(data.base64.length/1024)}KB` : 'No image data (null)',
+          priority: 'immediate',
+          timeoutMs: 3000
+        });
+        if (data) {
+          onImagePaste(data.base64, data.mediaType);
+        } else {
+          const shortcutDisplay = getShortcutDisplay('chat:imagePaste', 'Chat', 'ctrl+v');
+          const message = env.isSSH() ? "No image found in clipboard. You're SSH'd; try scp?" : `No image found in clipboard. Use ${shortcutDisplay} to paste images.`;
+          addNotification({
+            key: 'no-image-in-clipboard',
+            text: message,
+            priority: 'immediate',
+            timeoutMs: 1000
+          });
+        }
+      })
+      .catch(err => {
+        addNotification({
+          key: 'image-paste-error',
+          text: `Error: ${err.message}`,
+          priority: 'immediate',
+          timeoutMs: 3000
+        });
+      });
   }, [addNotification, onImagePaste]);
 
   // Register chat:submit handler directly in the handler registry (not via

@@ -50,6 +50,7 @@ const result = await Bun.build({
   sourcemap: 'external',
   minify: false,
   naming: 'cli.mjs',
+  external: ['@mariozechner/clipboard', '@mariozechner/clipboard-*'],
   define: {
     // MACRO.* build-time constants
     // Keep the internal compatibility version high enough to pass
