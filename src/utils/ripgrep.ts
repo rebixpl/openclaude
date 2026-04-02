@@ -28,6 +28,8 @@ type RipgrepConfig = {
   argv0?: string
 }
 
+type RipgrepErrorLike = Pick<NodeJS.ErrnoException, 'code' | 'message'>
+
 const getRipgrepConfig = memoize((): RipgrepConfig => {
   const userWantsSystemRipgrep = isEnvDefinedFalsy(
     process.env.USE_BUILTIN_RIPGREP,
@@ -103,6 +105,52 @@ export class RipgrepTimeoutError extends Error {
     super(message)
     this.name = 'RipgrepTimeoutError'
   }
+}
+
+export class RipgrepUnavailableError extends Error {
+  code?: string | number
+
+  constructor(
+    message: string,
+    public readonly config: Pick<RipgrepConfig, 'mode' | 'command'>,
+    code?: string | number,
+  ) {
+    super(message)
+    this.name = 'RipgrepUnavailableError'
+    this.code = code
+  }
+}
+
+function getRipgrepInstallHint(platform = process.platform): string {
+  switch (platform) {
+    case 'win32':
+      return 'Install ripgrep and confirm `rg --version` works in the same terminal. Windows: `winget install BurntSushi.ripgrep.MSVC` or `choco install ripgrep`.'
+    case 'darwin':
+      return 'Install ripgrep and confirm `rg --version` works in the same terminal. macOS: `brew install ripgrep`.'
+    default:
+      return 'Install ripgrep and confirm `rg --version` works in the same terminal. Linux: use your distro package manager, for example `apt install ripgrep`.'
+  }
+}
+
+export function wrapRipgrepUnavailableError(
+  error: RipgrepErrorLike,
+  config = getRipgrepConfig(),
+  platform = process.platform,
+): RipgrepUnavailableError {
+  const modeExplanation =
+    config.mode === 'builtin'
+      ? 'This install could not locate its packaged ripgrep fallback.'
+      : config.mode === 'system'
+        ? 'A working system ripgrep binary was not found on PATH.'
+        : 'The embedded ripgrep binary could not be started.'
+
+  const originalMessage = error.message ? ` Original error: ${error.message}` : ''
+
+  return new RipgrepUnavailableError(
+    `ripgrep (rg) is required for file search but could not be started. ${modeExplanation} ${getRipgrepInstallHint(platform)}${originalMessage}`,
+    config,
+    error.code,
+  )
 }
 
 function ripGrepRaw(
@@ -275,7 +323,9 @@ async function ripGrepFileCount(
     child.on('error', err => {
       if (settled) return
       settled = true
-      reject(err)
+      reject(
+        err.code === 'ENOENT' ? wrapRipgrepUnavailableError(err) : err,
+      )
     })
   })
 }
@@ -337,7 +387,9 @@ export async function ripGrepStream(
     child.on('error', err => {
       if (settled) return
       settled = true
-      reject(err)
+      reject(
+        err.code === 'ENOENT' ? wrapRipgrepUnavailableError(err) : err,
+      )
     })
   })
 }
@@ -383,7 +435,9 @@ export async function ripGrep(
       // These should be surfaced to the user rather than silently returning empty results
       const CRITICAL_ERROR_CODES = ['ENOENT', 'EACCES', 'EPERM']
       if (CRITICAL_ERROR_CODES.includes(error.code as string)) {
-        reject(error)
+        reject(
+          error.code === 'ENOENT' ? wrapRipgrepUnavailableError(error) : error,
+        )
         return
       }
 

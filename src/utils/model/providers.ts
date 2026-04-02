@@ -17,6 +17,10 @@ export function getAPIProvider(): APIProvider {
             : 'firstParty'
 }
 
+export function usesAnthropicAccountFlow(): boolean {
+  return getAPIProvider() === 'firstParty'
+}
+
 export function getAPIProviderForStatsig(): AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS {
   return getAPIProvider() as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
 }

@@ -16,7 +16,13 @@ All of Claude Code's tools work — bash, file read/write/edit, grep, glob, agen
 npm install -g @gitlawb/openclaude
 ```
 
+If you install via npm and later see `ripgrep not found`, install ripgrep
+system-wide and confirm `rg --version` works in the same terminal before
+starting OpenClaude.
+
 ### Option B: From source (requires Bun)
+
+Use Bun `1.3.11` or newer for source builds on Windows. Older Bun versions such as `1.3.4` can fail with a large batch of unresolved module errors during `bun run build`.
 
 ```bash
 # Clone from gitlawb
@@ -187,8 +193,11 @@ export OPENAI_MODEL=gpt-4o
 | `CODEX_API_KEY` | Codex only | Codex/ChatGPT access token override |
 | `CODEX_AUTH_JSON_PATH` | Codex only | Path to a Codex CLI `auth.json` file |
 | `CODEX_HOME` | Codex only | Alternative Codex home directory (`auth.json` will be read from here) |
+| `OPENCLAUDE_DISABLE_CO_AUTHORED_BY` | No | Set to `1` to suppress the default `Co-Authored-By` trailer in generated git commit messages |
 
 You can also use `ANTHROPIC_MODEL` to override the model name. `OPENAI_MODEL` takes priority.
+
+OpenClaude PR bodies use OpenClaude branding by default. `OPENCLAUDE_DISABLE_CO_AUTHORED_BY` only affects the commit trailer, not PR attribution text.
 
 ---
 

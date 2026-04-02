@@ -9,6 +9,7 @@
  */
 
 import { readFileSync } from 'fs'
+import { noTelemetryPlugin } from './no-telemetry-plugin'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 const version = pkg.version
@@ -61,8 +62,11 @@ const result = await Bun.build({
     'MACRO.BUILD_TIME': JSON.stringify(new Date().toISOString()),
     'MACRO.ISSUES_EXPLAINER':
       JSON.stringify('report the issue at https://github.com/anthropics/claude-code/issues'),
+    'MACRO.PACKAGE_URL': JSON.stringify('@gitlawb/openclaude'),
+    'MACRO.NATIVE_PACKAGE_URL': 'undefined',
   },
   plugins: [
+    noTelemetryPlugin,
     {
       name: 'bun-bundle-shim',
       setup(build) {

@@ -25,6 +25,7 @@ import { isEnvTruthy, isRunningOnHomespace } from './utils/envUtils.js';
 import { type FpsMetrics, FpsTracker } from './utils/fpsTracker.js';
 import { updateGithubRepoPathMapping } from './utils/githubRepoPathMapping.js';
 import { applyConfigEnvironmentVariables } from './utils/managedEnv.js';
+import { usesAnthropicAccountFlow } from './utils/model/providers.js';
 import type { PermissionMode } from './utils/permissions/PermissionMode.js';
 import { getBaseRenderOptions } from './utils/renderOptions.js';
 import { getSettingsWithAllErrors } from './utils/settings/allErrors.js';
@@ -107,12 +108,12 @@ export async function showSetupScreens(root: Root, permissionMode: PermissionMod
     return false;
   }
 
-  const isOpenAIProvider = isEnvTruthy(process.env.CLAUDE_CODE_USE_OPENAI);
+  const usesAnthropicSetup = usesAnthropicAccountFlow();
   const config = getGlobalConfig();
   let onboardingShown = false;
 
-  // Skip onboarding dialog for OpenAI provider (no Anthropic account needed)
-  if (!isOpenAIProvider && (!config.theme || !config.hasCompletedOnboarding) // always show onboarding at least once
+  // Skip onboarding dialog for third-party providers (no Anthropic account needed)
+  if (usesAnthropicSetup && (!config.theme || !config.hasCompletedOnboarding) // always show onboarding at least once
   ) {
     onboardingShown = true;
     const {
@@ -133,9 +134,9 @@ export async function showSetupScreens(root: Root, permissionMode: PermissionMod
   // Note: non-interactive sessions (CI/CD with -p) never reach showSetupScreens at all.
   // Skip permission checks in claubbit
   if (!isEnvTruthy(process.env.CLAUBBIT)) {
-    // Skip trust dialog UI for OpenAI provider (no Anthropic auth), but still
+    // Skip trust dialog UI for third-party providers (no Anthropic auth), but still
     // run trust state initialization below so the REPL mounts correctly.
-    if (!isOpenAIProvider && !checkHasTrustDialogAccepted()) {
+    if (usesAnthropicSetup && !checkHasTrustDialogAccepted()) {
       const {
         TrustDialog
       } = await import('./components/TrustDialog/TrustDialog.js');
@@ -144,7 +145,7 @@ export async function showSetupScreens(root: Root, permissionMode: PermissionMod
 
     // Signal that trust has been verified for this session.
     // GrowthBook checks this to decide whether to include auth headers.
-    // Critical for OpenAI provider: without this, downstream config lookups
+    // Critical for third-party providers: without this, downstream config lookups
     // may fail silently, preventing the REPL from mounting (frozen terminal).
     setSessionTrustAccepted(true);
 
@@ -157,8 +158,8 @@ export async function showSetupScreens(root: Root, permissionMode: PermissionMod
     // Now that trust is established, prefetch system context if it wasn't already
     void getSystemContext();
 
-    // Skip MCP approval dialogs for OpenAI provider (no interactive auth prompts)
-    if (!isOpenAIProvider) {
+    // Skip MCP approval dialogs for third-party providers (no interactive auth prompts)
+    if (usesAnthropicSetup) {
       // If settings are valid, check for any mcp.json servers that need approval
       const {
         errors: allErrors
