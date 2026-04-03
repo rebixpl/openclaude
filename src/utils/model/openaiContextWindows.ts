@@ -44,10 +44,17 @@ const OPENAI_CONTEXT_WINDOWS: Record<string, number> = {
   'google/gemini-2.0-flash':1_048_576,
   'google/gemini-2.5-pro':  1_048_576,
 
+  // Google (native via CLAUDE_CODE_USE_GEMINI)
+  'gemini-2.0-flash':       1_048_576,
+  'gemini-2.5-pro':         1_048_576,
+  'gemini-2.5-flash':       1_048_576,
+
   // Ollama local models
-  'llama3.3:70b':               8_192,
-  'llama3.1:8b':                8_192,
-  'llama3.2:3b':                8_192,
+  // Llama 3.1+ models support 128k context natively (Meta official specs).
+  // Ollama defaults to num_ctx=8192 but users can configure higher values.
+  'llama3.3:70b':             128_000,
+  'llama3.1:8b':              128_000,
+  'llama3.2:3b':              128_000,
   'qwen2.5-coder:32b':        32_768,
   'qwen2.5-coder:7b':         32_768,
   'deepseek-coder-v2:16b':    163_840,
@@ -94,7 +101,12 @@ const OPENAI_MAX_OUTPUT_TOKENS: Record<string, number> = {
 
   // Google (via OpenRouter)
   'google/gemini-2.0-flash':   8_192,
-  'google/gemini-2.5-pro':    32_768,
+  'google/gemini-2.5-pro':    65_536,
+
+  // Google (native via CLAUDE_CODE_USE_GEMINI)
+  'gemini-2.0-flash':          8_192,
+  'gemini-2.5-pro':           65_536,
+  'gemini-2.5-flash':         65_536,
 
   // Ollama local models (conservative safe defaults)
   'llama3.3:70b':               4_096,
@@ -112,7 +124,11 @@ const OPENAI_MAX_OUTPUT_TOKENS: Record<string, number> = {
 
 function lookupByModel<T>(table: Record<string, T>, model: string): T | undefined {
   if (table[model] !== undefined) return table[model]
-  for (const key of Object.keys(table)) {
+  // Sort keys by length descending so the most specific prefix wins.
+  // Without this, 'gpt-4-turbo-preview' could match 'gpt-4' (8k) instead
+  // of 'gpt-4-turbo' (128k) depending on V8's key iteration order.
+  const sortedKeys = Object.keys(table).sort((a, b) => b.length - a.length)
+  for (const key of sortedKeys) {
     if (model.startsWith(key)) return table[key]
   }
   return undefined
