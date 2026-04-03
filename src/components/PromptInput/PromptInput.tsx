@@ -6,7 +6,7 @@ import * as React from 'react';
 
 // Debug helper for image paste issues
 const DEBUG_LOG_FILE = 'E:/Coding_Projects/vibecoding/openclaude_test/clipboard_debug.log';
-function debug(...args: unknown[]) {
+function pasteDebug(...args: unknown[]) {
   try {
     const msg = `[UI ${new Date().toISOString()}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}\n`;
     appendFileSync(DEBUG_LOG_FILE, msg);
@@ -204,7 +204,7 @@ type Props = {
 const PROMPT_FOOTER_LINES = 5;
 const MIN_INPUT_VIEWPORT_LINES = 3;
 function PromptInput({
-  debug,
+  debug: _debug,
   ideSelection,
   toolPermissionContext,
   setToolPermissionContext,
@@ -1161,11 +1161,11 @@ function PromptInput({
     }));
   }
   function onImagePaste(image: string, mediaType?: string, filename?: string, dimensions?: ImageDimensions, sourcePath?: string) {
-    debug('onImagePaste called, image length:', image?.length, 'mediaType:', mediaType);
+    pasteDebug('onImagePaste called, image length:', image?.length, 'mediaType:', mediaType);
     logEvent('tengu_paste_image', {});
     onModeChange('prompt');
     const pasteId = nextPasteIdRef.current++;
-    debug('pasteId:', pasteId);
+    pasteDebug('pasteId:', pasteId);
     const newContent: PastedContent = {
       id: pasteId,
       type: 'image',
@@ -1184,7 +1184,7 @@ function PromptInput({
     void storeImage(newContent);
 
     // Update UI
-    debug('Setting pastedContents for id:', pasteId);
+    pasteDebug('Setting pastedContents for id:', pasteId);
     setPastedContents(prev => ({
       ...prev,
       [pasteId]: newContent
@@ -1194,10 +1194,10 @@ function PromptInput({
     // rather than being lost.
     const prefix = pendingSpaceAfterPillRef.current ? ' ' : '';
     const imageRef = formatImageRef(pasteId);
-    debug('Inserting text at cursor:', prefix + imageRef);
+    pasteDebug('Inserting text at cursor:', prefix + imageRef);
     insertTextAtCursor(prefix + imageRef);
     pendingSpaceAfterPillRef.current = true;
-    debug('Done');
+    pasteDebug('Done');
   }
 
   // Prune images whose [Image #N] placeholder is no longer in the input text.

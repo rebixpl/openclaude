@@ -1,10 +1,9 @@
 import { feature } from 'bun:bundle'
 import { randomBytes } from 'crypto'
 import { execa } from 'execa'
-import { spawn } from 'child_process'
-import { appendFileSync, existsSync } from 'fs'
+import { existsSync } from 'fs'
 import { fileURLToPath } from 'node:url'
-import { basename, dirname, extname, isAbsolute, join, resolve } from 'path'
+import { basename, dirname, extname, isAbsolute, join } from 'path'
 import {
   IMAGE_MAX_HEIGHT,
   IMAGE_MAX_WIDTH,
@@ -56,9 +55,12 @@ if (process.platform === 'win32') {
       getImageBinary: clipboard.getImageBinary,
       getImageBase64: clipboard.getImageBase64,
     }
-  } catch (e: any) {
-    windowsClipboardLoadError = e
-    logForDebugging('Failed to load Windows clipboard module at startup:', e)
+  } catch (e) {
+    windowsClipboardLoadError = e as Error
+    logForDebugging(
+      `Failed to load Windows clipboard module at startup: ${(e as Error)?.message ?? String(e)}`,
+      { level: 'warn' },
+    )
   }
 }
 
@@ -164,12 +166,20 @@ export async function hasImageInClipboard(): Promise<boolean> {
   // Windows native clipboard fast path
   if (process.platform === 'win32') {
     try {
-      const winClip = await getWindowsClipboardModule()
-      if (winClip) {
-        return winClip.hasImage()
+      if (windowsClipboardModule) {
+        return windowsClipboardModule.hasImage()
+      }
+      if (windowsClipboardLoadError) {
+        logForDebugging(
+          `Windows clipboard module unavailable: ${windowsClipboardLoadError.message}`,
+          { level: 'warn' },
+        )
       }
     } catch (e) {
-      logForDebugging('Windows native hasImageInClipboard failed:', e)
+      logForDebugging(
+        `Windows native hasImageInClipboard failed: ${(e as Error)?.message ?? String(e)}`,
+        { level: 'warn' },
+      )
     }
     return false
   }
@@ -266,17 +276,27 @@ export async function getImageFromClipboard(): Promise<ImageWithDimensions | nul
   // Windows native clipboard via child process to avoid blocking
   if (process.platform === 'win32') {
     try {
-      // Use shell execution to avoid any path escaping issues
-      const helperPath = 'E:/Coding_Projects/vibecoding/openclaude_test/openclaude_src/clipboard-helper.cjs'
+      const helperPath = getClipboardHelperPath()
       const result = await execa('node', [helperPath], {
         timeout: 5000,
         reject: false,
-        shell: true,  // Use shell to help with any escaping issues
-        windowsVerbatimArguments: true,  // Don't quote arguments on Windows
       })
-      logForDebugging('Clipboard helper result:', result.exitCode, result.stdout?.slice(0, 100))
-      if (result.exitCode === 0 && result.stdout) {
-        const parsed = JSON.parse(result.stdout)
+      const stdout = result.stdout?.trim()
+      logForDebugging(
+        `Clipboard helper result: exitCode=${result.exitCode} outputBytes=${stdout?.length ?? 0}`,
+      )
+
+      if (result.exitCode === 0 && stdout) {
+        let parsed: { success?: boolean; base64?: string; error?: string }
+        try {
+          parsed = JSON.parse(stdout)
+        } catch {
+          logForDebugging(
+            `Clipboard helper returned non-JSON output: ${stdout.slice(0, 160)}`,
+            { level: 'warn' },
+          )
+          parsed = {}
+        }
         if (parsed.success && parsed.base64) {
           const imageBuffer = Buffer.from(parsed.base64, 'base64')
           const resized = await maybeResizeAndDownsampleImageBuffer(
@@ -290,9 +310,17 @@ export async function getImageFromClipboard(): Promise<ImageWithDimensions | nul
             dimensions: resized.dimensions,
           }
         }
+        if (parsed.error) {
+          logForDebugging(`Clipboard helper reported error: ${parsed.error}`, {
+            level: 'warn',
+          })
+        }
       }
     } catch (e) {
-      logForDebugging('Windows clipboard helper failed:', e)
+      logForDebugging(
+        `Windows clipboard helper failed: ${(e as Error)?.message ?? String(e)}`,
+        { level: 'warn' },
+      )
     }
   }
 
@@ -350,7 +378,10 @@ export async function getImageFromClipboard(): Promise<ImageWithDimensions | nul
       dimensions: resized.dimensions,
     }
   } catch (e) {
-    logForDebugging('Error getting image from clipboard:', e)
+    logForDebugging(
+      `Error getting image from clipboard: ${(e as Error)?.message ?? String(e)}`,
+      { level: 'warn' },
+    )
     return null
   }
 }
