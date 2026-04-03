@@ -204,7 +204,7 @@ type Props = {
 const PROMPT_FOOTER_LINES = 5;
 const MIN_INPUT_VIEWPORT_LINES = 3;
 function PromptInput({
-  debug: _debug,
+  debug,
   ideSelection,
   toolPermissionContext,
   setToolPermissionContext,
