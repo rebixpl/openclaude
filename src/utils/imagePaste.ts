@@ -28,7 +28,9 @@ function getClipboardHelperPath(): string {
   const paths = [
     // When running from src/utils/ (dev mode with bun)
     join(currentFileDir, '..', '..', '..', 'clipboard-helper.cjs'),
-    // When running from dist/ (bundled)
+    // When running from dist/ (bundled) with flat output
+    join(currentFileDir, '..', 'clipboard-helper.cjs'),
+    // When running from nested dist output layouts
     join(currentFileDir, '..', '..', 'clipboard-helper.cjs'),
     // Fallback to cwd
     join(process.cwd(), 'clipboard-helper.cjs'),
