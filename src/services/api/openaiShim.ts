@@ -164,11 +164,12 @@ function convertToolResultContent(content: unknown): string {
 
 function convertContentBlocks(
   content: unknown,
-): string | Array<{ type: string; text?: string; image_url?: { url: string } }> {
+  options?: { includeImageDetail?: boolean },
+): string | Array<{ type: string; text?: string; image_url?: { url: string; detail?: string } }> {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return String(content ?? '')
 
-  const parts: Array<{ type: string; text?: string; image_url?: { url: string } }> = []
+  const parts: Array<{ type: string; text?: string; image_url?: { url: string; detail?: string } }> = []
   for (const block of content) {
     switch (block.type) {
       case 'text':
@@ -177,14 +178,22 @@ function convertContentBlocks(
       case 'image': {
         const src = block.source
         if (src?.type === 'base64') {
+          const imageObj: { url: string; detail?: string } = {
+            url: `data:${src.media_type};base64,${src.data}`,
+          }
+          if (options?.includeImageDetail) {
+            imageObj.detail = 'auto'
+          }
           parts.push({
             type: 'image_url',
-            image_url: {
-              url: `data:${src.media_type};base64,${src.data}`,
-            },
+            image_url: imageObj,
           })
         } else if (src?.type === 'url') {
-          parts.push({ type: 'image_url', image_url: { url: src.url } })
+          const imageObj: { url: string; detail?: string } = { url: src.url }
+          if (options?.includeImageDetail) {
+            imageObj.detail = 'auto'
+          }
+          parts.push({ type: 'image_url', image_url: imageObj })
         }
         break
       }
@@ -221,9 +230,19 @@ function isGeminiMode(): boolean {
   )
 }
 
+function isFireworksProvider(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false
+  try {
+    return new URL(baseUrl).hostname.toLowerCase().includes('fireworks')
+  } catch {
+    return false
+  }
+}
+
 function convertMessages(
   messages: Array<{ role: string; message?: { role?: string; content?: unknown }; content?: unknown }>,
   system: unknown,
+  options?: { includeImageDetail?: boolean },
 ): OpenAIMessage[] {
   const result: OpenAIMessage[] = []
 
@@ -259,13 +278,13 @@ function convertMessages(
         if (otherContent.length > 0) {
           result.push({
             role: 'user',
-            content: convertContentBlocks(otherContent),
+            content: convertContentBlocks(otherContent, options),
           })
         }
       } else {
         result.push({
           role: 'user',
-          content: convertContentBlocks(content),
+          content: convertContentBlocks(content, options),
         })
       }
     } else if (role === 'assistant') {
@@ -280,7 +299,7 @@ function convertMessages(
         const assistantMsg: OpenAIMessage = {
           role: 'assistant',
           content: (() => {
-            const c = convertContentBlocks(textContent)
+            const c = convertContentBlocks(textContent, options)
             return typeof c === 'string' ? c : Array.isArray(c) ? c.map((p: { text?: string }) => p.text ?? '').join('') : ''
           })(),
         }
@@ -340,7 +359,7 @@ function convertMessages(
         result.push({
           role: 'assistant',
           content: (() => {
-            const c = convertContentBlocks(content)
+            const c = convertContentBlocks(content, options)
             return typeof c === 'string' ? c : Array.isArray(c) ? c.map((p: { text?: string }) => p.text ?? '').join('') : ''
           })(),
         })
@@ -365,8 +384,8 @@ function convertMessages(
         prev.content = prevContent + (prevContent && curContent ? '\n' : '') + curContent
       } else {
         const toArray = (
-          c: string | Array<{ type: string; text?: string; image_url?: { url: string } }> | undefined,
-        ): Array<{ type: string; text?: string; image_url?: { url: string } }> => {
+          c: string | Array<{ type: string; text?: string; image_url?: { url: string; detail?: string } }> | undefined,
+        ): Array<{ type: string; text?: string; image_url?: { url: string; detail?: string } }> => {
           if (!c) return []
           if (typeof c === 'string') return c ? [{ type: 'text', text: c }] : []
           return c
@@ -1054,6 +1073,7 @@ class OpenAIShimMessages {
         content?: unknown
       }>,
       params.system,
+      { includeImageDetail: isFireworksProvider(request.baseUrl) },
     )
 
     const body: Record<string, unknown> = {

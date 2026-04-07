@@ -70,6 +70,9 @@ const OPENAI_CONTEXT_WINDOWS: Record<string, number> = {
   'llama3.2:1b':              128_000,
   'qwen3:8b':                 128_000,
   'codestral':                 32_768,
+
+  // Fireworks AI (Fire Pass)
+  'accounts/fireworks/routers/kimi-k2p5-turbo': 256_000,
 }
 
 /**
@@ -134,6 +137,9 @@ const OPENAI_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'llama3.2:1b':                4_096,
   'qwen3:8b':                   8_192,
   'codestral':                   8_192,
+
+  // Fireworks AI (Fire Pass)
+  'accounts/fireworks/routers/kimi-k2p5-turbo': 256_000,
 }
 
 function lookupByModel<T>(table: Record<string, T>, model: string): T | undefined {

@@ -19,6 +19,7 @@ export type ProviderPreset =
   | 'azure-openai'
   | 'openrouter'
   | 'lmstudio'
+  | 'fireworks'
   | 'custom'
 
 export type ProviderProfileInput = {
@@ -216,6 +217,15 @@ export function getProviderPresetDefaults(
         model: 'local-model',
         apiKey: '',
         requiresApiKey: false,
+      }
+    case 'fireworks':
+      return {
+        provider: 'anthropic',
+        name: 'Fireworks AI',
+        baseUrl: 'https://api.fireworks.ai/inference',
+        model: 'accounts/fireworks/routers/kimi-k2p5-turbo',
+        apiKey: '',
+        requiresApiKey: true,
       }
     case 'custom':
       return {

@@ -560,6 +560,11 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
         description: 'Local LM Studio endpoint',
       },
       {
+        value: 'fireworks',
+        label: 'Fireworks AI',
+        description: 'Fireworks AI OpenAI-compatible endpoint (Fire Pass)',
+      },
+      {
         value: 'custom',
         label: 'Custom',
         description: 'Any OpenAI-compatible provider',
